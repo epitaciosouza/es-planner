@@ -87,6 +87,7 @@ body:not(.authed) .auth-screen{display:grid}
 .user-box .uinfo{min-width:0;flex:1}
 .user-box .uname{font-size:13px;font-weight:700;color:#fff;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .user-box .uuser{font-size:10px;color:#8FAF9E;font-family:"Spline Sans Mono";white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#btnChangePassword{font-size:11px;font-weight:600;color:#8FAF9E;border:1px solid #2c4d3e;padding:5px 10px;border-radius:7px;flex-shrink:0}#btnChangePassword:hover{color:#fff;border-color:#d8f16c}
 #btnLogout{font-size:11px;font-weight:600;color:#8FAF9E;border:1px solid #2c4d3e;padding:5px 10px;border-radius:7px;transition:all .15s;flex-shrink:0}
 #btnLogout:hover{color:#fff;background:var(--red);border-color:var(--red);transform:translateY(-1px)}
 
@@ -543,7 +544,7 @@ html,body{overflow:clip}
         <div class="uname" id="uName">—</div>
         <div class="uuser" id="uHandle">—</div>
       </div>
-      <button id="btnLogout" title="Sair da conta">Sair</button>
+      <button id="btnChangePassword" title="Alterar senha">Senha</button><button id="btnLogout" title="Sair da conta">Sair</button>
     </div>
 
     <div class="today-card">
@@ -716,6 +717,7 @@ html,body{overflow:clip}
  <div class="tools-footer"><span id="googleCount">0 selecionados</span><button id="googleImport" class="btn primary" disabled>Importar selecionados</button></div>
 </dialog>
 
+<dialog id="changePasswordDialog"><form id="changePasswordForm" method="dialog" style="padding:24px;min-width:min(360px,90vw)"><h2 style="margin:0 0 16px">Alterar senha</h2><label class="f"><span>Nova senha</span><input id="accountNewPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><label class="f"><span>Confirme a nova senha</span><input id="accountConfirmPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><p id="accountPasswordMessage" role="status"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button type="button" id="cancelPassword">Cancelar</button><button type="submit" class="primary">Salvar senha</button></div></form></dialog>
 <div id="toasts"></div>
 
 <script>
@@ -961,6 +963,17 @@ async function logoutPlanner(){
   if(error){ toast('Não foi possível sair: '+traduz(error.message)); return; }
   resetAccess();
 }
+$('btnChangePassword').addEventListener('click',()=>{ $('changePasswordForm').reset();$('accountPasswordMessage').textContent='';$('changePasswordDialog').showModal(); });
+$('cancelPassword').addEventListener('click',()=>$('changePasswordDialog').close());
+$('changePasswordForm').addEventListener('submit',async event=>{
+  event.preventDefault();const password=$('accountNewPassword').value,msg=$('accountPasswordMessage');
+  if(password!==$('accountConfirmPassword').value){msg.textContent='As senhas digitadas são diferentes.';return;}
+  const button=event.submitter;button.disabled=true;
+  try{const {error}=await sb.auth.updateUser({password});if(error)throw error;
+    $('changePasswordDialog').close();toast('Senha atualizada com sucesso ✓');
+  }catch(error){msg.textContent='Não foi possível alterar a senha: '+traduz(error.message);}
+  finally{button.disabled=false;}
+});
 $('btnLogout').addEventListener('click',logoutPlanner);
 $('gateLogout').addEventListener('click',logoutPlanner);
 $('checkAccess').addEventListener('click',async()=>{
@@ -1864,6 +1877,7 @@ function toast(msg, action){
   else if(session) await enterUser(session.user);   // sessão lembrada → entra direto
 })();
 </script>
+
 <button id="aboutBtn" type="button" aria-haspopup="dialog">Sobre</button>
 <dialog id="aboutDialog" aria-labelledby="aboutTitle"><div class="about-head"><span aria-hidden="true">◆</span><h2 id="aboutTitle">ES PLANNER</h2></div><div class="about-body"><p>Calendário e planner de produtividade.</p><div style="text-align:left;font-size:13px;margin:16px 0;border-top:1px solid #dae3eb;padding-top:14px"><strong>Como usar</strong><p>Selecione um dia e crie suas tarefas. Use as visões Dia, Semana, Mês e Ano para organizar sua agenda e clique em uma tarefa para editar seus detalhes.</p><p>Marque as tarefas concluídas, arraste entre os dias e use a busca e os filtros por categoria. Suas tarefas ficam salvas na nuvem, vinculadas à sua conta.</p><p>Atalhos: N = nova tarefa · T = hoje · M = mês · S = semana · A = ano · Esc = fechar.</p></div><p>Desenvolvido por<br><strong id="authorName">Epitacio Souza (DUT8)</strong><br><a href="mailto:epitacio.eng@outlook.com" style="color:#087f79;text-decoration:none">epitacio.eng@outlook.com</a></p><p><a href="https://www.linkedin.com/in/epitaciosouza/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn de Epitacio Souza" title="LinkedIn de Epitacio Souza" style="display:inline-flex;align-items:center;justify-content:center;color:#0a66c2;padding:4px"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.45 2H3.55A1.55 1.55 0 0 0 2 3.55v16.9A1.55 1.55 0 0 0 3.55 22h16.9A1.55 1.55 0 0 0 22 20.45V3.55A1.55 1.55 0 0 0 20.45 2ZM8.1 18.75H5.15V9.2H8.1v9.55ZM6.63 7.9a1.71 1.71 0 1 1 0-3.42 1.71 1.71 0 0 1 0 3.42Zm12.12 10.85H15.8V14.1c0-1.11-.02-2.54-1.55-2.54-1.55 0-1.79 1.21-1.79 2.46v4.73H9.51V9.2h2.83v1.3h.04a3.1 3.1 0 0 1 2.79-1.53c2.98 0 3.58 1.96 3.58 4.51v5.27Z"></path></svg></a></p><button class="primary" id="closeAbout">Fechar</button></div></dialog>
 <script>
