@@ -373,7 +373,7 @@ body:not(.authed) .auth-screen{display:grid}
 
 /* Controle de acesso e administração */
 body.access-gated .auth-screen{display:none}
-#accessGate[hidden],#adminBtn[hidden],#fNameWrap[hidden]{display:none!important}
+#accessGate[hidden],#adminBtn[hidden],#fNameWrap[hidden],#recoveryForm[hidden],#authForm[hidden],#forgotPassword[hidden],.auth-tabs[hidden]{display:none!important}
 #accessGate{position:fixed;inset:0;z-index:305;display:grid;place-items:center;background:var(--pine);padding:24px}
 .access-card{width:min(460px,100%);background:var(--paper2);border-radius:20px;padding:30px;line-height:1.6}
 .access-card h2{margin:12px 0;font-size:24px}.access-card p{margin:12px 0;overflow-wrap:anywhere}.access-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
@@ -510,6 +510,14 @@ html,body{overflow:clip}
       </label>
       <div class="auth-msg" id="authMsg"></div>
       <button class="btn primary big" id="authSubmit" type="submit">Entrar na minha agenda</button>
+    </form>
+    <button type="button" id="forgotPassword" style="display:block;margin:12px auto 0;border:0;background:transparent;color:#087f79;cursor:pointer">Esqueci minha senha</button>
+    <form id="recoveryForm" hidden>
+      <p id="recoveryIntro">Digite sua nova senha.</p>
+      <label class="f"><span>Nova senha</span><input type="password" id="newPassword" minlength="8" maxlength="60" autocomplete="new-password" required></label>
+      <label class="f"><span>Confirme a nova senha</span><input type="password" id="confirmPassword" minlength="8" maxlength="60" autocomplete="new-password" required></label>
+      <div class="auth-msg" id="recoveryMsg" role="status"></div>
+      <button class="btn primary big" type="submit">Salvar nova senha</button>
     </form>
 
     <div class="auth-note">
@@ -819,6 +827,40 @@ const calEl = $('calendar'), calWrap = $('calWrap');
 
 /* ================= auth ================= */
 let authMode = 'login';
+let recoveryMode=location.hash.includes('type=recovery');
+function showRecovery(){
+  recoveryMode=true;
+  document.body.classList.remove('authed','access-gated');
+  $('authForm').hidden=true;document.querySelector('.auth-tabs').hidden=true;$('forgotPassword').hidden=true;
+  $('recoveryForm').hidden=false;
+}
+$('forgotPassword').addEventListener('click',async()=>{
+  const email=$('aEmail').value.trim().toLowerCase();
+  if(!email||!$('aEmail').checkValidity()){authErr('Digite seu e-mail no campo acima para receber o link.');$('aEmail').focus();return;}
+  const button=$('forgotPassword');button.disabled=true;
+  try{
+    const {error}=await sb.auth.resetPasswordForEmail(email);
+    if(error)throw error;
+    authErr('Se este e-mail estiver cadastrado, você receberá um link para criar uma nova senha. Confira também o lixo eletrônico.',true);
+  }catch(error){authErr('Não foi possível enviar o link: '+traduz(error.message));}
+  finally{button.disabled=false;}
+});
+$('recoveryForm').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const password=$('newPassword').value,confirm=$('confirmPassword').value,msg=$('recoveryMsg');
+  if(password!==confirm){msg.textContent='As senhas digitadas são diferentes.';msg.classList.add('show');return;}
+  const button=event.submitter;button.disabled=true;
+  try{
+    const {data,error}=await sb.auth.updateUser({password});
+    if(error)throw error;
+    msg.textContent='Senha atualizada com sucesso.';msg.classList.add('show','ok');
+    recoveryMode=false;$('recoveryForm').hidden=true;$('authForm').hidden=false;
+    document.querySelector('.auth-tabs').hidden=false;$('forgotPassword').hidden=false;
+    history.replaceState(null,'',location.pathname);
+    await enterUser(data.user);
+  }catch(error){msg.textContent='Não foi possível salvar a senha: '+traduz(error.message);msg.classList.add('show');}
+  finally{button.disabled=false;}
+});
 function authErr(msg, ok){
   const m = $('authMsg'); m.textContent = msg;
   m.classList.toggle('ok', !!ok); m.classList.remove('show'); void m.offsetWidth; m.classList.add('show');
@@ -1816,9 +1858,10 @@ function toast(msg, action){
     return;
   }
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  sb.auth.onAuthStateChange((event) => { if(event === 'SIGNED_OUT') resetAccess(); });
+  sb.auth.onAuthStateChange((event) => { if(event === 'SIGNED_OUT') resetAccess(); if(event === 'PASSWORD_RECOVERY')showRecovery(); });
   const {data:{session}} = await sb.auth.getSession();
-  if(session) await enterUser(session.user);   // sessão lembrada → entra direto
+  if(recoveryMode)showRecovery();
+  else if(session) await enterUser(session.user);   // sessão lembrada → entra direto
 })();
 </script>
 <button id="aboutBtn" type="button" aria-haspopup="dialog">Sobre</button>
