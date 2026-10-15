@@ -90,6 +90,14 @@ body:not(.authed) .auth-screen{display:grid}
 #btnChangePassword{font-size:11px;font-weight:600;color:#8FAF9E;border:1px solid #2c4d3e;padding:5px 10px;border-radius:7px;flex-shrink:0}#btnChangePassword:hover{color:#fff;border-color:#d8f16c}
 #btnLogout{font-size:11px;font-weight:600;color:#8FAF9E;border:1px solid #2c4d3e;padding:5px 10px;border-radius:7px;transition:all .15s;flex-shrink:0}
 #btnLogout:hover{color:#fff;background:var(--red);border-color:var(--red);transform:translateY(-1px)}
+.settings-link{align-self:flex-start;color:#9ec6af;font-size:12px;font-weight:600;padding:0 2px;margin-top:-7px}.settings-link:hover{color:var(--lime)}
+#settingsDialog{margin:auto;width:min(400px,92vw);padding:24px;border:1px solid var(--line);border-radius:16px;background:var(--paper2);color:var(--ink);box-shadow:0 16px 50px #0004}
+#settingsDialog::backdrop{background:#0f241c99}
+#settingsDialog h2{font:700 21px "Bricolage Grotesque";margin:0 0 8px}
+#settingsDialog p{color:var(--ink-soft);font-size:13px;margin:0 0 18px}
+#settingsDialog label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}
+#settingsDialog select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--ink);font:inherit}
+#settingsDialog .settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 
 .today-card{background:var(--pine2);border:1px solid #274a3a;border-radius:var(--r-lg);padding:14px;display:flex;gap:13px;align-items:center}
 .ring-wrap{position:relative;width:62px;height:62px;flex-shrink:0}
@@ -546,6 +554,7 @@ html,body{overflow:clip}
       </div>
       <button id="btnChangePassword" title="Alterar senha">Senha</button><button id="btnLogout" title="Sair da conta">Sair</button>
     </div>
+    <button class="settings-link" id="btnSettings" type="button">⚙ Configurações</button>
 
     <div class="today-card">
       <div class="ring-wrap">
@@ -718,6 +727,7 @@ html,body{overflow:clip}
 </dialog>
 
 <dialog id="changePasswordDialog"><form id="changePasswordForm" method="dialog" style="padding:24px;min-width:min(360px,90vw)"><h2 style="margin:0 0 16px">Alterar senha</h2><label class="f"><span>Nova senha</span><input id="accountNewPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><label class="f"><span>Confirme a nova senha</span><input id="accountConfirmPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><p id="accountPasswordMessage" role="status"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button type="button" id="cancelPassword">Cancelar</button><button type="submit" class="primary">Salvar senha</button></div></form></dialog>
+<dialog id="settingsDialog" aria-labelledby="settingsTitle"><form id="settingsForm"><h2 id="settingsTitle">Configurações</h2><p>Escolha a visão que aparecerá ao abrir sua agenda neste navegador.</p><label for="initialView">Visão inicial</label><select id="initialView"><option value="day">Dia</option><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option></select><div class="settings-actions"><button class="btn ghost" type="button" id="cancelSettings">Cancelar</button><button class="btn primary" type="submit">Salvar</button></div></form></dialog>
 <div id="toasts"></div>
 
 <script>
@@ -775,6 +785,9 @@ function traduz(msg){
 /* ================= estado ================= */
 let sb = null, tasks = [], currentUser = null;
 const state = { view:'month', cursor:new Date(), selected:todayKey(), cats:new Set(), query:'', lastCat:'trabalho' };
+const validInitialViews = new Set(['day','week','month','year']);
+const initialViewKey = userId => `es-planner-initial-view-${userId}`;
+function getInitialView(userId){try{const value=localStorage.getItem(initialViewKey(userId));return validInitialViews.has(value)?value:'month';}catch{return 'month';}}
 let editingId = null, modalCat = 'trabalho', modalPri = 'media', dragId = null, lastDeleted = null;
 
 /* ================= nuvem (CRUD) ================= */
@@ -949,7 +962,7 @@ async function enterUser(user){
     if(epoch !== accessEpoch) return;
     if(latest.status !== 'aprovado'){ showAccessGate(latest.status); return; }
     tasks = loaded;
-    state.view='month'; state.cursor=new Date(); state.selected=todayKey();
+    state.view=getInitialView(currentUser.id); state.cursor=new Date(); state.selected=todayKey();
     state.cats.clear(); state.query=''; $('searchInput').value='';
     $('uName').textContent=currentUser.name; $('uHandle').textContent='☁ '+currentUser.email;
     $('uAvatar').textContent=currentUser.name.trim()[0].toUpperCase();
@@ -964,6 +977,13 @@ async function logoutPlanner(){
   resetAccess();
 }
 $('btnChangePassword').addEventListener('click',()=>{ $('changePasswordForm').reset();$('accountPasswordMessage').textContent='';$('changePasswordDialog').showModal(); });
+$('btnSettings').addEventListener('click',()=>{if(!currentUser)return;$('initialView').value=getInitialView(currentUser.id);$('settingsDialog').showModal();});
+$('cancelSettings').addEventListener('click',()=>$('settingsDialog').close());
+$('settingsForm').addEventListener('submit',event=>{
+  event.preventDefault();if(!currentUser)return;
+  try{localStorage.setItem(initialViewKey(currentUser.id),$('initialView').value);$('settingsDialog').close();toast('Visão inicial salva ✓');}
+  catch{toast('Não foi possível salvar a preferência neste navegador.');}
+});
 $('cancelPassword').addEventListener('click',()=>$('changePasswordDialog').close());
 $('changePasswordForm').addEventListener('submit',async event=>{
   event.preventDefault();const password=$('accountNewPassword').value,msg=$('accountPasswordMessage');
@@ -1562,7 +1582,7 @@ $('searchInput').addEventListener('input', e => { state.query = e.target.value; 
 
 /* ================= teclado ================= */
 document.addEventListener('keydown', e => {
-  if($('adminDialog').open || $('aboutDialog').open || $('bulkDialog').open || $('googleDialog').open) return;
+  if($('adminDialog').open || $('aboutDialog').open || $('bulkDialog').open || $('googleDialog').open || $('settingsDialog').open) return;
   if(!currentUser) return;
   const typing = /^(input|textarea|select)$/i.test(document.activeElement?.tagName || '');
   if(e.key === 'Escape'){
