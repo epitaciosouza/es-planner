@@ -389,7 +389,7 @@ body.access-gated .auth-screen{display:none}
 #adminBtn{position:fixed;bottom:53px;right:16px;z-index:290;background:var(--pine);color:var(--lime);border:1px solid var(--lime);border-radius:7px;padding:9px 14px;font-weight:600}
 #adminDialog{margin:auto;width:min(940px,95vw);max-height:90dvh;padding:24px;border:1px solid var(--line);border-radius:16px;background:var(--paper2);color:var(--ink);overflow:auto}
 #adminDialog::backdrop{background:#0f241c99}.admin-heading,.admin-tools{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:18px}.admin-tools label{display:flex;gap:8px;align-items:center}.admin-tools select{padding:8px;border:1px solid var(--line);border-radius:6px;background:white}
-#adminMessage{margin:12px 0;line-height:1.5}#adminUsers{display:grid;gap:10px}.admin-user{border:1px solid var(--line);border-radius:10px;padding:15px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.admin-user p{margin:4px 0;overflow-wrap:anywhere}.admin-user small{color:var(--ink-soft)}.admin-actions{display:flex;gap:8px;flex-wrap:wrap}.admin-actions button{padding:8px 12px}.access-badge{font-size:12px;font-weight:700;color:var(--pine);background:var(--lime);padding:3px 8px;border-radius:6px}
+#adminMessage{margin:12px 0;line-height:1.5}#adminUsers{display:grid;gap:10px}.admin-user{border:1px solid var(--line);border-radius:10px;padding:15px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.admin-user p{margin:4px 0;overflow-wrap:anywhere}.admin-user small{color:var(--ink-soft)}.admin-actions{display:flex;gap:8px;flex-wrap:wrap}.admin-actions button{padding:8px 12px}.admin-actions .delete-user{color:#a42e22;border-color:#e4b1aa}.admin-actions .delete-user:hover{background:#fff0ee;border-color:#c94a3a}.access-badge{font-size:12px;font-weight:700;color:var(--pine);background:var(--lime);padding:3px 8px;border-radius:6px}
 
 .planner-tools{display:flex;justify-content:flex-end;gap:8px;padding:0 22px 10px;flex-wrap:wrap}
 .planner-tools button{padding:6px 11px;font-size:12px;border:1px solid var(--line2);border-radius:8px;background:var(--paper2);color:var(--ink-soft)}
@@ -698,7 +698,7 @@ html,body{overflow:clip}
 <button id="adminBtn" type="button" hidden>Administrar acessos</button>
 <dialog id="adminDialog" aria-labelledby="adminTitle">
  <div class="admin-heading"><h2 id="adminTitle">Administração de acessos</h2><button class="btn ghost" id="closeAdmin">Fechar</button></div>
- <p>Libere o uso da agenda ou suspenda o acesso. As tarefas de cada pessoa continuam privadas.</p>
+ <p>Aprovar, suspender ou reativar apenas altera o acesso e preserva os dados. Excluir remove a conta e todas as tarefas vinculadas; essa ação é permanente.</p>
  <div class="admin-tools"><label>Situação <select id="adminFilter"><option value="pendente">Pendentes</option><option value="todos">Todos</option><option value="aprovado">Aprovados</option><option value="recusado">Recusados</option><option value="suspenso">Suspensos</option></select></label><button class="btn ghost" id="refreshAdmin">Atualizar lista</button></div>
  <details class="google-config"><summary>Configurar importação Google</summary><p>Informe o ID público do cliente OAuth criado para o ES Planner. Não use senha ou chave secreta.</p><div class="tools-fields"><label>ID do cliente Google<input id="googleClientInput" placeholder="…apps.googleusercontent.com" autocomplete="off"></label><button id="saveGoogleClient" class="btn ghost">Salvar configuração</button></div><p id="googleConfigMessage" class="tools-status" role="status"></p></details>
  <p id="adminMessage" role="status"></p><div id="adminUsers"></div>
@@ -1018,7 +1018,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden) refreshAc
 function renderAdmin(){
   const filter=$('adminFilter').value;
   const rows=adminRows.filter(r=>filter==='todos'||r.status===filter);
-  $('adminUsers').innerHTML=rows.map(r=>`<article class="admin-user"><div><strong>${esc(r.nome||'Sem nome')}</strong><p>${esc(r.email)}</p><small>${esc(new Date(r.criado_em).toLocaleString('pt-BR'))}</small><p><span class="access-badge">${esc(accessLabels[r.status]||r.status)}</span>${r.administrador?' · Administrador':''}</p></div><div class="admin-actions">${r.administrador?'<small>Conta administrativa protegida</small>':`${r.status!=='aprovado'?`<button class="btn primary" data-user="${esc(r.user_id)}" data-status="aprovado">${r.status==='suspenso'?'Reativar':'Aprovar'}</button>`:''}${r.status==='pendente'?`<button class="btn ghost" data-user="${esc(r.user_id)}" data-status="recusado">Recusar</button>`:''}${r.status==='aprovado'?`<button class="btn ghost" data-user="${esc(r.user_id)}" data-status="suspenso">Suspender</button>`:''}`}</div></article>`).join('');
+  $('adminUsers').innerHTML=rows.map(r=>`<article class="admin-user"><div><strong>${esc(r.nome||'Sem nome')}</strong><p>${esc(r.email)}</p><small>${esc(new Date(r.criado_em).toLocaleString('pt-BR'))}</small><p><span class="access-badge">${esc(accessLabels[r.status]||r.status)}</span>${r.administrador?' · Administrador':''}</p></div><div class="admin-actions">${r.administrador?'<small>Conta administrativa protegida</small>':`${r.status!=='aprovado'?`<button class="btn primary" data-user="${esc(r.user_id)}" data-status="aprovado">${r.status==='suspenso'?'Reativar':'Aprovar'}</button>`:''}${r.status==='pendente'?`<button class="btn ghost" data-user="${esc(r.user_id)}" data-status="recusado">Recusar</button>`:''}${r.status==='aprovado'?`<button class="btn ghost" data-user="${esc(r.user_id)}" data-status="suspenso">Suspender</button>`:''}<button class="btn ghost delete-user" data-user="${esc(r.user_id)}" data-action="delete">Excluir</button>`}</div></article>`).join('');
   $('adminMessage').textContent=rows.length?`${rows.length} cadastro(s) nesta lista.`:'Nenhum cadastro nesta situação.';
 }
 async function loadAdmin(){
@@ -1043,6 +1043,25 @@ $('adminUsers').addEventListener('click',async e=>{
   if(!button) return;
   const target=adminRows.find(r=>r.user_id===button.dataset.user);
   if(!target) return;
+  if(button.dataset.action==='delete'){
+    const ok=confirm(`Excluir permanentemente a conta ${target.email}? Esta ação apaga todas as tarefas e remove o acesso. Não pode ser desfeita.`);
+    if(!ok)return;
+    const typed=prompt(`Para confirmar, digite o e-mail completo da conta:\n${target.email}`);
+    if(typed===null)return;
+    if(typed.trim().toLowerCase()!==target.email.trim().toLowerCase()){$('adminMessage').textContent='O e-mail não confere. A conta não foi excluída.';return;}
+    const epoch=accessEpoch;
+    $('adminUsers').querySelectorAll('button').forEach(b=>b.disabled=true);
+    $('adminMessage').textContent=`Excluindo ${target.email} e os dados vinculados…`;
+    try{
+      const {error}=await sb.rpc('planner_excluir_usuario',{p_usuario:target.user_id});
+      if(epoch!==accessEpoch)return;
+      if(error)throw new Error(traduz(error.message));
+      await loadAdmin();
+      $('adminMessage').textContent=`Conta ${target.email}, acesso e tarefas excluídos.`;
+    }catch(err){if(epoch===accessEpoch)$('adminMessage').textContent='Não foi possível excluir: '+traduz(err.message);}
+    finally{$('adminUsers').querySelectorAll('button').forEach(b=>b.disabled=false);}
+    return;
+  }
   const desired=button.dataset.status;
   if(!confirm(`${button.textContent} o acesso de ${target.email}?`)) return;
   const epoch=accessEpoch;
