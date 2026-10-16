@@ -98,6 +98,16 @@ body:not(.authed) .auth-screen{display:grid}
 #settingsDialog label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}
 #settingsDialog select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--ink);font:inherit}
 #settingsDialog .settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+#categoriesDialog{margin:auto;width:min(520px,94vw);max-height:90dvh;overflow:auto;padding:24px;border:1px solid var(--line);border-radius:16px;background:var(--paper2);color:var(--ink);box-shadow:0 16px 50px #0004}
+#categoriesDialog::backdrop{background:#0f241c99}
+#categoriesDialog h2{font:700 22px "Bricolage Grotesque";margin-bottom:10px}
+#categoriesDialog p{font-size:13px;line-height:1.5;color:var(--ink-soft);margin-bottom:16px}
+.category-editor-row{display:grid;grid-template-columns:minmax(0,1fr) 58px;gap:12px;align-items:end;margin:12px 0}
+.category-editor-row label{display:grid;gap:5px;font-size:12px;color:var(--ink-soft)}
+.category-editor-row input[type=text]{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:white;padding:10px;color:var(--ink);font:inherit}
+.category-editor-row input[type=color]{width:58px;height:39px;padding:3px;border:1px solid var(--line);border-radius:8px;background:white;cursor:pointer}
+.categories-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:18px}
+#editCategories{font-size:11px;color:var(--lime);letter-spacing:0;text-transform:none}
 
 .today-card{background:var(--pine2);border:1px solid #274a3a;border-radius:var(--r-lg);padding:14px;display:flex;gap:13px;align-items:center}
 .ring-wrap{position:relative;width:62px;height:62px;flex-shrink:0}
@@ -580,7 +590,7 @@ html,body{overflow:clip}
     <div class="sb-label"><span>Ritmo da semana</span><span class="mono" id="barsRange" style="letter-spacing:0;text-transform:none"></span></div>
     <div class="bars" id="bars"></div>
 
-    <div class="sb-label"><span>Categorias</span><button id="clearFilters" hidden>limpar filtro ✕</button></div>
+    <div class="sb-label"><span>Categorias</span><button id="editCategories" type="button">Editar</button><button id="clearFilters" hidden>limpar filtro ✕</button></div>
     <div class="cat-list" id="catList"></div>
 
     <div class="sb-label"><span>Próximas</span></div>
@@ -727,7 +737,8 @@ html,body{overflow:clip}
 </dialog>
 
 <dialog id="changePasswordDialog"><form id="changePasswordForm" method="dialog" style="padding:24px;min-width:min(360px,90vw)"><h2 style="margin:0 0 16px">Alterar senha</h2><label class="f"><span>Nova senha</span><input id="accountNewPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><label class="f"><span>Confirme a nova senha</span><input id="accountConfirmPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><p id="accountPasswordMessage" role="status"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button type="button" id="cancelPassword">Cancelar</button><button type="submit" class="primary">Salvar senha</button></div></form></dialog>
-<dialog id="settingsDialog" aria-labelledby="settingsTitle"><form id="settingsForm"><h2 id="settingsTitle">Configurações</h2><p>Escolha a visão que aparecerá ao abrir sua agenda neste navegador.</p><label for="initialView">Visão inicial</label><select id="initialView"><option value="day">Dia</option><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option></select><div class="settings-actions"><button class="btn ghost" type="button" id="cancelSettings">Cancelar</button><button class="btn primary" type="submit">Salvar</button></div></form></dialog>
+<dialog id="categoriesDialog" aria-labelledby="categoriesTitle"><form id="categoriesForm"><h2 id="categoriesTitle">Categorias e cores</h2><p>Edite os nomes e as cores padrão da sua agenda. Suas preferências ficam salvas na conta. As tarefas com cor personalizada mantêm a própria cor.</p><div id="categoryFields"></div><p id="categoriesMessage" role="status"></p><div class="categories-actions"><button class="btn ghost" id="restoreCategories" type="button">Restaurar padrão</button><button class="btn ghost" id="cancelCategories" type="button">Cancelar</button><button class="btn primary" type="submit">Salvar categorias</button></div></form></dialog>
+<dialog id="settingsDialog" aria-labelledby="settingsTitle"><form id="settingsForm"><h2 id="settingsTitle">Configurações</h2><p>Escolha a visão que aparecerá ao abrir sua agenda neste navegador.</p><label for="initialView">Visão inicial</label><select id="initialView"><option value="day">Dia</option><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option></select><p style="margin-top:20px"><button class="btn ghost" type="button" id="settingsCategories">Editar categorias e cores</button></p><div class="settings-actions"><button class="btn ghost" type="button" id="cancelSettings">Cancelar</button><button class="btn primary" type="submit">Salvar</button></div></form></dialog>
 <div id="toasts"></div>
 
 <script>
@@ -739,13 +750,27 @@ const SUPABASE_URL = 'https://spovradcmxaanyhvbqmn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_fI6OBlNRluK46o_qxl69fg_N-WlZtFo';
 
 /* ================= dados ================= */
-const CATS = {
+const DEFAULT_CATS = {
   trabalho:{label:'Trabalho', color:'#2F5FB3'},
   pessoal:{label:'Pessoal',  color:'#E4572E'},
   saude:{label:'Saúde',      color:'#148A5C'},
   estudo:{label:'Estudo',    color:'#D99A1B'},
   casa:{label:'Casa',        color:'#0E8A8A'},
 };
+const CATS = structuredClone(DEFAULT_CATS);
+function applyCategories(values={}){
+  for(const id of Object.keys(DEFAULT_CATS)){
+    const value=values?.[id];
+    CATS[id]=value && typeof value.label==='string' && value.label.trim().length>=1 && value.label.trim().length<=40 && /^#[0-9a-f]{6}$/i.test(value.color||'')
+      ? {label:value.label.trim(),color:value.color} : {...DEFAULT_CATS[id]};
+  }
+  renderCategoryPicker();
+}
+async function fetchCategories(){
+  const {data,error}=await sb.rpc('planner_minhas_categorias');
+  if(error)throw new Error('Não foi possível carregar suas categorias. Tente recarregar a página.');
+  return data||{};
+}
 const taskColor = t => /^#[0-9a-f]{6}$/i.test(t.color||'') ? t.color : (CATS[t.cat]?.color || '#888');
 const PRI_W = {alta:0, media:1, baixa:2};
 const MONTHS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -915,6 +940,7 @@ let accessUser = null, accessEpoch = 0, accessChecking = false, adminRows = [];
 const accessLabels = {pendente:'Pendente', aprovado:'Aprovado', recusado:'Recusado', suspenso:'Suspenso'};
 function clearAgenda(){
   currentUser = null; tasks = []; lastDeleted = null;
+  applyCategories(); $('categoriesDialog').close(); $('settingsDialog').close();
   resetCalendarTools();
   document.body.classList.remove('authed','panel-open');
   $('adminBtn').hidden = true;
@@ -956,12 +982,12 @@ async function enterUser(user){
       name:user.user_metadata?.name || user.email.split('@')[0],seeded:user.user_metadata?.seeded};
     await ensureSeed(currentUser.seeded);
     if(epoch !== accessEpoch) return;
-    const loaded = await fetchTasks();
+    const [loaded,categoryValues] = await Promise.all([fetchTasks(),fetchCategories()]);
     if(epoch !== accessEpoch) return;
     const latest = await readAccess();
     if(epoch !== accessEpoch) return;
     if(latest.status !== 'aprovado'){ showAccessGate(latest.status); return; }
-    tasks = loaded;
+    tasks = loaded; applyCategories(categoryValues);
     state.view=getInitialView(currentUser.id); state.cursor=new Date(); state.selected=todayKey();
     state.cats.clear(); state.query=''; $('searchInput').value='';
     $('uName').textContent=currentUser.name; $('uHandle').textContent='☁ '+currentUser.email;
@@ -978,6 +1004,38 @@ async function logoutPlanner(){
 }
 $('btnChangePassword').addEventListener('click',()=>{ $('changePasswordForm').reset();$('accountPasswordMessage').textContent='';$('changePasswordDialog').showModal(); });
 $('btnSettings').addEventListener('click',()=>{if(!currentUser)return;$('initialView').value=getInitialView(currentUser.id);$('settingsDialog').showModal();});
+let categorySaving=false;
+function fillCategoryFields(values){
+  $('categoryFields').innerHTML=Object.entries(values).map(([id,c])=>`<div class="category-editor-row"><label for="catName-${id}">Nome da categoria<input id="catName-${id}" type="text" data-category="${id}" value="${esc(c.label)}" maxlength="40" required></label><label for="catColor-${id}">Cor<input id="catColor-${id}" type="color" value="${c.color}" aria-label="Cor da categoria ${esc(c.label)}"></label></div>`).join('');
+}
+function openCategorySettings(){
+  if(!currentUser||categorySaving)return;
+  $('settingsDialog').close();fillCategoryFields(CATS);$('categoriesMessage').textContent='';$('categoriesDialog').showModal();
+}
+$('editCategories').addEventListener('click',openCategorySettings);
+$('settingsCategories').addEventListener('click',openCategorySettings);
+$('cancelCategories').addEventListener('click',()=>$('categoriesDialog').close());
+$('categoriesDialog').addEventListener('cancel',event=>{if(categorySaving)event.preventDefault();});
+$('restoreCategories').addEventListener('click',()=>{fillCategoryFields(DEFAULT_CATS);$('categoriesMessage').textContent='Padrões preenchidos. Clique em Salvar categorias para aplicar.';});
+$('categoriesForm').addEventListener('submit',async event=>{
+  event.preventDefault();if(!currentUser||categorySaving)return;
+  const epoch=accessEpoch,userId=currentUser.id,values={};
+  for(const id of Object.keys(DEFAULT_CATS)){
+    const label=$('catName-'+id).value.trim(),color=$('catColor-'+id).value;
+    if(!label||label.length>40||!/^#[0-9a-f]{6}$/i.test(color)){$('categoriesMessage').textContent='Preencha todos os nomes (até 40 caracteres) e escolha as cores.';return;}
+    values[id]={label,color};
+  }
+  categorySaving=true;
+  const controls=[...$('categoriesForm').querySelectorAll('input,button')];controls.forEach(el=>el.disabled=true);
+  $('categoriesMessage').textContent='Salvando suas categorias…';
+  try{
+    const {error}=await sb.rpc('planner_salvar_categorias',{p_categorias:values});
+    if(epoch!==accessEpoch||currentUser?.id!==userId)return;
+    if(error)throw error;
+    applyCategories(values);renderAll();$('categoriesDialog').close();toast('Categorias e cores salvas ✓');
+  }catch(error){if(epoch===accessEpoch)$('categoriesMessage').textContent='Não foi possível salvar: '+traduz(error.message);}
+  finally{categorySaving=false;controls.forEach(el=>el.disabled=false);}
+});
 $('cancelSettings').addEventListener('click',()=>$('settingsDialog').close());
 $('settingsForm').addEventListener('submit',event=>{
   event.preventDefault();if(!currentUser)return;
@@ -1132,7 +1190,7 @@ function wcardHTML(t, i){
       <div class="wcard-title">${esc(t.title)}</div>
       <div class="wcard-meta">
         ${range ? `<span class="mono">${range}</span>` : ''}
-        <span class="tag">${CATS[t.cat]?.label||''}</span>
+        <span class="tag">${esc(CATS[t.cat]?.label||'')}</span>
         <span class="pri-l ${t.pri}">${t.pri==='alta'?'▲ Alta':t.pri==='media'?'◆ Média':'▽ Baixa'}</span>
       </div>
     </div>
@@ -1262,7 +1320,7 @@ function renderDayPanel(){
           <div class="ptitle">${esc(t.title)}</div>
           <div class="pmeta"><span class="mono">${range}</span>
             ${t.dur?`<span>${fmtDur(t.dur)}</span>`:''}
-            <span class="tag" style="--c:${c}">${CATS[t.cat]?.label||''}</span>
+            <span class="tag" style="--c:${c}">${esc(CATS[t.cat]?.label||'')}</span>
             ${t.pri==='alta'?'<span style="color:var(--red);font-weight:700">⚑ alta</span>':''}</div>
           ${t.notes ? `<div class="pnotes">“${esc(t.notes)}”</div>` : ''}
         </div>
@@ -1325,7 +1383,7 @@ function renderSidebar(){
   $('catList').innerHTML = Object.entries(CATS).map(([id,c]) => {
     const n = tasks.filter(t => t.cat === id && !t.done).length;
     return `<button class="cat-row ${state.cats.has(id)?'on':''}" data-cat="${id}" style="--c:${c.color}">
-      <span class="dot"></span>${c.label}<span class="cnt">${n}</span></button>`;
+      <span class="dot"></span>${esc(c.label)}<span class="cnt">${n}</span></button>`;
   }).join('');
   $('clearFilters').hidden = state.cats.size === 0;
   document.querySelectorAll('.cat-row').forEach(b => b.addEventListener('click', () => {
@@ -1495,15 +1553,18 @@ async function createRepeatedTasks(data){
 
 /* ================= modal ================= */
 const backdrop = $('backdrop');
-$('fCats').innerHTML = Object.entries(CATS).map(([id,c]) =>
-  `<button type="button" class="cat-opt" data-cat="${id}" style="--c:${c.color}">${c.label}</button>`).join('');
+function renderCategoryPicker(){
+  $('fCats').innerHTML = Object.entries(CATS).map(([id,c]) =>
+    `<button type="button" class="cat-opt" data-cat="${id}" style="--c:${c.color}">${esc(c.label)}</button>`).join('');
+}
+renderCategoryPicker();
 
 function syncModalPickers(){
   syncTaskColor();
   document.querySelectorAll('#fCats .cat-opt').forEach(b => b.classList.toggle('on', b.dataset.cat === modalCat));
   document.querySelectorAll('#fPri button').forEach(b => b.classList.toggle('on', b.dataset.p === modalPri));
 }
-document.querySelectorAll('#fCats .cat-opt').forEach(b => b.addEventListener('click', () => { modalCat = b.dataset.cat; syncModalPickers(); }));
+$('fCats').addEventListener('click',e=>{const b=e.target.closest('button[data-cat]');if(b){modalCat=b.dataset.cat;syncModalPickers();}});
 document.querySelectorAll('#fPri button').forEach(b => b.addEventListener('click', () => { modalPri = b.dataset.p; syncModalPickers(); }));
 
 function openModal(task, dateKey){
@@ -1601,7 +1662,7 @@ $('searchInput').addEventListener('input', e => { state.query = e.target.value; 
 
 /* ================= teclado ================= */
 document.addEventListener('keydown', e => {
-  if($('adminDialog').open || $('aboutDialog').open || $('bulkDialog').open || $('googleDialog').open || $('settingsDialog').open) return;
+  if($('adminDialog').open || $('aboutDialog').open || $('bulkDialog').open || $('googleDialog').open || $('settingsDialog').open || $('categoriesDialog').open) return;
   if(!currentUser) return;
   const typing = /^(input|textarea|select)$/i.test(document.activeElement?.tagName || '');
   if(e.key === 'Escape'){
