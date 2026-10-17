@@ -31,6 +31,9 @@ kbd{font-family:"Spline Sans Mono",monospace;font-size:10px;background:rgba(255,
   border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:1px 5px}
 
 body:not(.authed) .app{display:none}
+#connectionNotice[hidden],body:not(.authed) #connectionNotice{display:none}
+#connectionNotice{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:220;display:flex;align-items:center;gap:14px;width:max-content;max-width:94vw;padding:10px 14px;border:1px solid #d6ae47;border-radius:10px;background:#fff6d8;color:#674d12;font-size:12px;box-shadow:0 3px 14px #0002}
+#retryConnection{font-weight:700;white-space:nowrap;text-decoration:underline}
 
 /* ============ TELA DE LOGIN ============ */
 .auth-screen{position:fixed;inset:0;z-index:300;display:none;place-items:center;padding:20px;
@@ -548,6 +551,7 @@ html,body{overflow:clip}
 </div>
 
 <!-- ============ APP ============ -->
+<div id="connectionNotice" hidden role="status"><span>Conexão interrompida. Tentando reconectar…</span><button type="button" id="retryConnection">Tentar novamente</button></div>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
@@ -942,6 +946,25 @@ $('authForm').addEventListener('submit', async e => {
 });
 
 let accessUser = null, accessEpoch = 0, accessChecking = false, adminRows = [];
+let accessGateStatus=null,accessRetryTimer=null,sessionRestoreTimer=null,sessionRestoring=false;
+function clearConnectionNotice(){
+  $('connectionNotice').hidden=true;clearTimeout(accessRetryTimer);accessRetryTimer=null;
+}
+function retryAccessLater(){
+  if(accessRetryTimer||!accessUser)return;
+  accessRetryTimer=setTimeout(()=>{accessRetryTimer=null;refreshAccess();},5000);
+}
+function reportAccessFailure(error){
+  if(error.kind==='session'){
+    resetAccess();authErr('Sua sessão precisa de um novo login. Entre novamente para acessar a agenda.');return;
+  }
+  if(error.kind==='transient'){
+    if(document.body.classList.contains('authed'))$('connectionNotice').hidden=false;
+    else showAccessGate('erro','A conexão com o servidor foi interrompida. Estamos tentando reconectar automaticamente.');
+    retryAccessLater();return;
+  }
+  showAccessGate('erro',error.message);
+}
 const accessLabels = {pendente:'Pendente', aprovado:'Aprovado', recusado:'Recusado', suspenso:'Suspenso'};
 function clearAgenda(){
   currentUser = null; tasks = []; lastDeleted = null;
@@ -954,10 +977,12 @@ function clearAgenda(){
   calEl.replaceChildren(); $('upList').replaceChildren();
 }
 function resetAccess(){
+  accessGateStatus=null;clearConnectionNotice();clearTimeout(sessionRestoreTimer);sessionRestoreTimer=null;
   accessEpoch++; accessUser = null; clearAgenda();
   $('accessGate').hidden = true; document.body.classList.remove('access-gated');
 }
 function showAccessGate(status, error){
+  accessGateStatus=status;clearConnectionNotice();
   clearAgenda();
   document.body.classList.add('access-gated'); $('accessGate').hidden = false;
   $('accessEmail').textContent = accessUser?.email || '';
@@ -970,11 +995,52 @@ function showAccessGate(status, error){
   const info = messages[status] || ['Não foi possível verificar o acesso', error || 'Tente verificar novamente.'];
   $('accessTitle').textContent = info[0]; $('accessMessage').textContent = info[1];
 }
+function accessFailure(error,status){
+  if(error?.kind)return error;
+  const code=error?.code||'',message=error?.message||'',http=Number(status||error?.status||0);
+  const sessionInvalid=http===401||['refresh_token_not_found','refresh_token_already_used','session_not_found','user_not_found','bad_jwt'].includes(code);
+  const temporary=!sessionInvalid&&(http===0&&!code||http===408||http===429||http>=500||/failed to fetch|network|fetch failed|timeout/i.test(message));
+  const e=new Error(temporary?'A conexão com o servidor foi interrompida.':
+    sessionInvalid?'Sua sessão precisa de um novo login.':
+    'Não foi possível verificar a liberação da conta. Tente novamente ou entre em contato com a administração.');
+  e.kind=temporary?'transient':sessionInvalid?'session':'access';return e;
+}
+async function restoreStoredSession(){
+  if(!sb||sessionRestoring||recoveryMode)return;
+  sessionRestoring=true;const epoch=accessEpoch;
+  clearTimeout(sessionRestoreTimer);sessionRestoreTimer=null;
+  try{
+    const {data,error}=await sb.auth.getSession();
+    if(epoch!==accessEpoch)return;
+    if(error)throw error;
+    if(recoveryMode){showRecovery();return;}
+    if(data?.session)await enterUser(data.session.user);
+    else resetAccess();
+  }catch(error){
+    if(epoch!==accessEpoch)return;
+    const failure=accessFailure(error);
+    if(failure.kind==='transient'){
+      showAccessGate('erro','A conexão foi interrompida ao recuperar sua sessão. Estamos tentando reconectar automaticamente.');
+      sessionRestoreTimer=setTimeout(restoreStoredSession,5000);
+    }else{resetAccess();authErr('Não foi possível recuperar sua sessão. Entre novamente.');}
+  }finally{sessionRestoring=false;}
+}
 async function readAccess(){
-  const {data,error} = await sb.rpc('planner_meu_acesso');
-  if(error) throw new Error('Não foi possível consultar a liberação. Verifique sua conexão e se a configuração de aprovação foi instalada no Supabase.');
-  if(!data?.length) throw new Error('Sua conta ainda não possui um registro de acesso. Entre em contato com a administração.');
-  return data[0];
+  try{
+    const {data:sessionData,error:sessionError}=await sb.auth.getSession();
+    if(sessionError)throw accessFailure(sessionError);
+    if(!sessionData?.session){const e=new Error('Sessão indisponível.');e.kind='session';throw e;}
+    let result=await sb.rpc('planner_meu_acesso');
+    if(result.error && (result.status===401||['PGRST301','PGRST303'].includes(result.error.code))){
+      const {data,error}=await sb.auth.refreshSession();
+      if(error)throw accessFailure(error);
+      if(!data?.session){const e=new Error('Sessão expirada.');e.kind='session';throw e;}
+      result=await sb.rpc('planner_meu_acesso');
+    }
+    if(result.error)throw accessFailure(result.error,result.status);
+    if(!result.data?.length){const e=new Error('Sua conta não possui mais um registro de acesso. Entre em contato com a administração.');e.kind='access';throw e;}
+    return result.data[0];
+  }catch(error){throw accessFailure(error);}
 }
 async function enterUser(user){
   const epoch = ++accessEpoch;
@@ -997,10 +1063,11 @@ async function enterUser(user){
     state.cats.clear(); state.query=''; $('searchInput').value='';
     $('uName').textContent=currentUser.name; $('uHandle').textContent='☁ '+currentUser.email;
     $('uAvatar').textContent=currentUser.name.trim()[0].toUpperCase();
+    accessGateStatus=null;clearConnectionNotice();
     $('accessGate').hidden=true; document.body.classList.remove('access-gated');
     document.body.classList.add('authed'); $('adminBtn').hidden=!latest.administrador;
     renderAll();
-  } catch(err){ if(epoch === accessEpoch) showAccessGate('erro',err.message); }
+  } catch(err){ if(epoch === accessEpoch) reportAccessFailure(accessFailure(err)); }
 }
 async function logoutPlanner(){
   const {error} = await sb.auth.signOut();
@@ -1072,23 +1139,29 @@ $('changePasswordForm').addEventListener('submit',async event=>{
 $('btnLogout').addEventListener('click',logoutPlanner);
 $('gateLogout').addEventListener('click',logoutPlanner);
 $('checkAccess').addEventListener('click',async()=>{
-  if(!accessUser) return;
+  if(!accessUser){if(sessionRestoreTimer)await restoreStoredSession();return;}
   $('checkAccess').disabled=true;
   try{await enterUser(accessUser);}finally{$('checkAccess').disabled=false;}
 });
 async function refreshAccess(){
-  if(!accessUser || !sb || accessChecking || !document.body.classList.contains('authed')) return;
-  accessChecking=true; const epoch=accessEpoch;
+  if(!accessUser||!sb||accessChecking||document.hidden||recoveryMode)return;
+  const active=document.body.classList.contains('authed');
+  if(!active&&accessGateStatus!=='erro')return;
+  accessChecking=true;const epoch=accessEpoch;
   try{
+    if(!active){await enterUser(accessUser);return;}
     const access=await readAccess();
-    if(epoch !== accessEpoch) return;
-    if(access.status !== 'aprovado') showAccessGate(access.status);
-    else { $('adminBtn').hidden=!access.administrador; if(!access.administrador) $('adminDialog').close(); }
-  }catch(err){if(epoch === accessEpoch) showAccessGate('erro',err.message);}
+    if(epoch!==accessEpoch)return;
+    if(access.status!=='aprovado')showAccessGate(access.status);
+    else{clearConnectionNotice();$('adminBtn').hidden=!access.administrador;if(!access.administrador)$('adminDialog').close();}
+  }catch(error){if(epoch===accessEpoch)reportAccessFailure(accessFailure(error));}
   finally{accessChecking=false;}
 }
 setInterval(refreshAccess,30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden) refreshAccess();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAccess();});
+window.addEventListener('online',()=>{if(accessUser)refreshAccess();else if(sessionRestoreTimer)restoreStoredSession();});
+window.addEventListener('focus',refreshAccess);
+$('retryConnection').addEventListener('click',refreshAccess);
 
 function renderAdmin(){
   const filter=$('adminFilter').value;
@@ -1987,11 +2060,18 @@ function toast(msg, action){
     $('authSubmit').disabled = true;
     return;
   }
-  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  sb.auth.onAuthStateChange((event) => { if(event === 'SIGNED_OUT') resetAccess(); if(event === 'PASSWORD_RECOVERY')showRecovery(); });
-  const {data:{session}} = await sb.auth.getSession();
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  sb.auth.onAuthStateChange((event,session) => {
+    if(event==='SIGNED_OUT')resetAccess();
+    if(event==='PASSWORD_RECOVERY')showRecovery();
+    if(session&&(event==='TOKEN_REFRESHED'||event==='SIGNED_IN'))setTimeout(()=>{
+      if(recoveryMode)return;
+      if(accessUser&&accessUser.id!==session.user.id)enterUser(session.user);
+      else refreshAccess();
+    },0);
+  });
   if(recoveryMode)showRecovery();
-  else if(session) await enterUser(session.user);   // sessão lembrada → entra direto
+  else await restoreStoredSession();
 })();
 </script>
 
