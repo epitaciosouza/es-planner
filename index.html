@@ -761,9 +761,10 @@ const DEFAULT_CATS = {
 const CATS = structuredClone(DEFAULT_CATS);
 function applyCategories(values=null){
   for(const id of Object.keys(CATS))delete CATS[id];
-  for(const [id,value] of Object.entries(values===null?DEFAULT_CATS:values)){
+  const categoryOrder=([id,value])=>Number.isInteger(value?.order)?value.order:(Object.keys(DEFAULT_CATS).includes(id)?Object.keys(DEFAULT_CATS).indexOf(id):50);
+  for(const [id,value] of Object.entries(values===null?DEFAULT_CATS:values).sort((a,b)=>categoryOrder(a)-categoryOrder(b))){
     if(/^[a-z][a-z0-9_]{0,63}$/.test(id) && typeof value?.label==='string' && value.label.trim().length>=1 && value.label.trim().length<=40 && /^#[0-9a-f]{6}$/i.test(value.color||''))
-      CATS[id]={label:value.label.trim(),color:value.color};
+      CATS[id]={label:value.label.trim(),color:value.color,...(Number.isInteger(value.order)?{order:value.order}:{})};
   }
   for(const t of tasks)if(!CATS[t.cat])t.cat='';
   state.cats=new Set([...state.cats].filter(id=>id===''||CATS[id]));
@@ -1037,7 +1038,7 @@ $('categoriesForm').addEventListener('submit',async event=>{
   for(const row of $('categoryFields').querySelectorAll('[data-category-row]')){
     const id=row.dataset.categoryRow,label=$('catName-'+id).value.trim(),color=$('catColor-'+id).value;
     if(!label||label.length>40||!/^#[0-9a-f]{6}$/i.test(color)){$('categoriesMessage').textContent='Preencha todos os nomes (até 40 caracteres) e escolha as cores.';return;}
-    values[id]={label,color};
+    values[id]={label,color,order:Object.keys(values).length};
   }
   const detached=tasks.filter(t=>t.cat&&!values[t.cat]);
   if(detached.length&&!confirm(`${detached.length} tarefa(s) ficarão sem categoria. Nenhuma tarefa será excluída. Salvar as alterações?`))return;
