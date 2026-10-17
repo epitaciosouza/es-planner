@@ -840,7 +840,7 @@ async function fetchTasks(){
     loaded.push(...(data||[]));if(!data||data.length<1000)break;page++;
   }
   return loaded.map(r=>({id:r.id,title:r.title,date:r.date,time:r.time||'',dur:r.dur,
-    cat:r.cat||'trabalho',pri:r.pri||'media',notes:r.notes||'',done:!!r.done,color:/^#[0-9a-f]{6}$/i.test(r.color||'')?r.color:null}));
+    cat:typeof r.cat==='string'?r.cat:'',pri:r.pri||'media',notes:r.notes||'',done:!!r.done,color:/^#[0-9a-f]{6}$/i.test(r.color||'')?r.color:null}));
 }
 function seedRows(){
   const t = new Date(), k = off => keyOf(addDays(t,off));
