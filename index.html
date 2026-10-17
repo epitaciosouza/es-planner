@@ -102,10 +102,11 @@ body:not(.authed) .auth-screen{display:grid}
 #categoriesDialog::backdrop{background:#0f241c99}
 #categoriesDialog h2{font:700 22px "Bricolage Grotesque";margin-bottom:10px}
 #categoriesDialog p{font-size:13px;line-height:1.5;color:var(--ink-soft);margin-bottom:16px}
-.category-editor-row{display:grid;grid-template-columns:minmax(0,1fr) 58px;gap:12px;align-items:end;margin:12px 0}
+.category-editor-row{display:grid;grid-template-columns:minmax(0,1fr) 58px 32px;gap:12px;align-items:end;margin:12px 0}
 .category-editor-row label{display:grid;gap:5px;font-size:12px;color:var(--ink-soft)}
 .category-editor-row input[type=text]{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:white;padding:10px;color:var(--ink);font:inherit}
 .category-editor-row input[type=color]{width:58px;height:39px;padding:3px;border:1px solid var(--line);border-radius:8px;background:white;cursor:pointer}
+.category-delete{height:39px;color:#a42e22;font-size:20px;border:1px solid #e4b1aa;border-radius:8px;background:white}.category-delete:hover{background:#fff0ee}
 .categories-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:18px}
 #editCategories{font-size:11px;color:var(--lime);letter-spacing:0;text-transform:none}
 
@@ -737,7 +738,7 @@ html,body{overflow:clip}
 </dialog>
 
 <dialog id="changePasswordDialog"><form id="changePasswordForm" method="dialog" style="padding:24px;min-width:min(360px,90vw)"><h2 style="margin:0 0 16px">Alterar senha</h2><label class="f"><span>Nova senha</span><input id="accountNewPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><label class="f"><span>Confirme a nova senha</span><input id="accountConfirmPassword" type="password" minlength="8" maxlength="60" autocomplete="new-password" required></label><p id="accountPasswordMessage" role="status"></p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><button type="button" id="cancelPassword">Cancelar</button><button type="submit" class="primary">Salvar senha</button></div></form></dialog>
-<dialog id="categoriesDialog" aria-labelledby="categoriesTitle"><form id="categoriesForm"><h2 id="categoriesTitle">Categorias e cores</h2><p>Edite os nomes e as cores padrão da sua agenda. Suas preferências ficam salvas na conta. As tarefas com cor personalizada mantêm a própria cor.</p><div id="categoryFields"></div><p id="categoriesMessage" role="status"></p><div class="categories-actions"><button class="btn ghost" id="restoreCategories" type="button">Restaurar padrão</button><button class="btn ghost" id="cancelCategories" type="button">Cancelar</button><button class="btn primary" type="submit">Salvar categorias</button></div></form></dialog>
+<dialog id="categoriesDialog" aria-labelledby="categoriesTitle"><form id="categoriesForm"><h2 id="categoriesTitle">Categorias e cores</h2><p>Edite os nomes e as cores padrão da sua agenda. Suas preferências ficam salvas na conta. As tarefas com cor personalizada mantêm a própria cor. Excluir uma categoria deixa suas tarefas sem categoria; nenhuma tarefa é apagada.</p><div id="categoryFields"></div><button class="btn ghost" id="addCategory" type="button">＋ Incluir categoria</button><p id="categoriesMessage" role="status"></p><div class="categories-actions"><button class="btn ghost" id="restoreCategories" type="button">Restaurar padrão</button><button class="btn ghost" id="cancelCategories" type="button">Cancelar</button><button class="btn primary" type="submit">Salvar categorias</button></div></form></dialog>
 <dialog id="settingsDialog" aria-labelledby="settingsTitle"><form id="settingsForm"><h2 id="settingsTitle">Configurações</h2><p>Escolha a visão que aparecerá ao abrir sua agenda neste navegador.</p><label for="initialView">Visão inicial</label><select id="initialView"><option value="day">Dia</option><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option></select><p style="margin-top:20px"><button class="btn ghost" type="button" id="settingsCategories">Editar categorias e cores</button></p><div class="settings-actions"><button class="btn ghost" type="button" id="cancelSettings">Cancelar</button><button class="btn primary" type="submit">Salvar</button></div></form></dialog>
 <div id="toasts"></div>
 
@@ -758,18 +759,21 @@ const DEFAULT_CATS = {
   casa:{label:'Casa',        color:'#0E8A8A'},
 };
 const CATS = structuredClone(DEFAULT_CATS);
-function applyCategories(values={}){
-  for(const id of Object.keys(DEFAULT_CATS)){
-    const value=values?.[id];
-    CATS[id]=value && typeof value.label==='string' && value.label.trim().length>=1 && value.label.trim().length<=40 && /^#[0-9a-f]{6}$/i.test(value.color||'')
-      ? {label:value.label.trim(),color:value.color} : {...DEFAULT_CATS[id]};
+function applyCategories(values=null){
+  for(const id of Object.keys(CATS))delete CATS[id];
+  for(const [id,value] of Object.entries(values===null?DEFAULT_CATS:values)){
+    if(/^[a-z][a-z0-9_]{0,63}$/.test(id) && typeof value?.label==='string' && value.label.trim().length>=1 && value.label.trim().length<=40 && /^#[0-9a-f]{6}$/i.test(value.color||''))
+      CATS[id]={label:value.label.trim(),color:value.color};
   }
+  for(const t of tasks)if(!CATS[t.cat])t.cat='';
+  state.cats=new Set([...state.cats].filter(id=>id===''||CATS[id]));
+  if(!CATS[state.lastCat])state.lastCat=Object.keys(CATS)[0]||'';
   renderCategoryPicker();
 }
 async function fetchCategories(){
   const {data,error}=await sb.rpc('planner_minhas_categorias');
   if(error)throw new Error('Não foi possível carregar suas categorias. Tente recarregar a página.');
-  return data||{};
+  return data;
 }
 const taskColor = t => /^#[0-9a-f]{6}$/i.test(t.color||'') ? t.color : (CATS[t.cat]?.color || '#888');
 const PRI_W = {alta:0, media:1, baixa:2};
@@ -1005,9 +1009,19 @@ async function logoutPlanner(){
 $('btnChangePassword').addEventListener('click',()=>{ $('changePasswordForm').reset();$('accountPasswordMessage').textContent='';$('changePasswordDialog').showModal(); });
 $('btnSettings').addEventListener('click',()=>{if(!currentUser)return;$('initialView').value=getInitialView(currentUser.id);$('settingsDialog').showModal();});
 let categorySaving=false;
-function fillCategoryFields(values){
-  $('categoryFields').innerHTML=Object.entries(values).map(([id,c])=>`<div class="category-editor-row"><label for="catName-${id}">Nome da categoria<input id="catName-${id}" type="text" data-category="${id}" value="${esc(c.label)}" maxlength="40" required></label><label for="catColor-${id}">Cor<input id="catColor-${id}" type="color" value="${c.color}" aria-label="Cor da categoria ${esc(c.label)}"></label></div>`).join('');
+function categoryRow(id,c){
+  return `<div class="category-editor-row" data-category-row="${id}"><label for="catName-${id}">Nome da categoria<input id="catName-${id}" type="text" data-category="${id}" value="${esc(c.label)}" maxlength="40" required></label><label for="catColor-${id}">Cor<input id="catColor-${id}" type="color" value="${c.color}" aria-label="Cor da categoria ${esc(c.label||'nova')}"></label><button class="category-delete" type="button" data-remove-category="${id}" aria-label="Excluir categoria ${esc(c.label||'nova')}">×</button></div>`;
 }
+function fillCategoryFields(values){$('categoryFields').innerHTML=Object.entries(values).map(([id,c])=>categoryRow(id,c)).join('');}
+$('addCategory').addEventListener('click',()=>{
+  if($('categoryFields').children.length>=50){$('categoriesMessage').textContent='Você pode ter até 50 categorias.';return;}
+  const id='cat_'+crypto.randomUUID().replaceAll('-','');
+  $('categoryFields').insertAdjacentHTML('beforeend',categoryRow(id,{label:'',color:'#2f5fb3'}));$('catName-'+id).focus();
+});
+$('categoryFields').addEventListener('click',event=>{
+  const button=event.target.closest('button[data-remove-category]');if(!button||categorySaving)return;
+  button.closest('[data-category-row]').remove();$('categoriesMessage').textContent='Clique em Salvar categorias para aplicar a exclusão. As tarefas serão preservadas.';
+});
 function openCategorySettings(){
   if(!currentUser||categorySaving)return;
   $('settingsDialog').close();fillCategoryFields(CATS);$('categoriesMessage').textContent='';$('categoriesDialog').showModal();
@@ -1020,11 +1034,13 @@ $('restoreCategories').addEventListener('click',()=>{fillCategoryFields(DEFAULT_
 $('categoriesForm').addEventListener('submit',async event=>{
   event.preventDefault();if(!currentUser||categorySaving)return;
   const epoch=accessEpoch,userId=currentUser.id,values={};
-  for(const id of Object.keys(DEFAULT_CATS)){
-    const label=$('catName-'+id).value.trim(),color=$('catColor-'+id).value;
+  for(const row of $('categoryFields').querySelectorAll('[data-category-row]')){
+    const id=row.dataset.categoryRow,label=$('catName-'+id).value.trim(),color=$('catColor-'+id).value;
     if(!label||label.length>40||!/^#[0-9a-f]{6}$/i.test(color)){$('categoriesMessage').textContent='Preencha todos os nomes (até 40 caracteres) e escolha as cores.';return;}
     values[id]={label,color};
   }
+  const detached=tasks.filter(t=>t.cat&&!values[t.cat]);
+  if(detached.length&&!confirm(`${detached.length} tarefa(s) ficarão sem categoria. Nenhuma tarefa será excluída. Salvar as alterações?`))return;
   categorySaving=true;
   const controls=[...$('categoriesForm').querySelectorAll('input,button')];controls.forEach(el=>el.disabled=true);
   $('categoriesMessage').textContent='Salvando suas categorias…';
@@ -1190,7 +1206,7 @@ function wcardHTML(t, i){
       <div class="wcard-title">${esc(t.title)}</div>
       <div class="wcard-meta">
         ${range ? `<span class="mono">${range}</span>` : ''}
-        <span class="tag">${esc(CATS[t.cat]?.label||'')}</span>
+        <span class="tag">${esc(CATS[t.cat]?.label||'Sem categoria')}</span>
         <span class="pri-l ${t.pri}">${t.pri==='alta'?'▲ Alta':t.pri==='media'?'◆ Média':'▽ Baixa'}</span>
       </div>
     </div>
@@ -1320,9 +1336,9 @@ function renderDayPanel(){
           <div class="ptitle">${esc(t.title)}</div>
           <div class="pmeta"><span class="mono">${range}</span>
             ${t.dur?`<span>${fmtDur(t.dur)}</span>`:''}
-            <span class="tag" style="--c:${c}">${esc(CATS[t.cat]?.label||'')}</span>
+            <span class="tag" style="--c:${c}">${esc(CATS[t.cat]?.label||'Sem categoria')}</span>
             ${t.pri==='alta'?'<span style="color:var(--red);font-weight:700">⚑ alta</span>':''}</div>
-          ${t.notes ? `<div class="pnotes">“${esc(t.notes)}”</div>` : ''}
+          
         </div>
         <button class="pedit" data-act="edit" aria-label="Editar">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 3l4 4L8 20l-5 1 1-5L17 3z"/></svg>
@@ -1380,7 +1396,7 @@ function renderSidebar(){
       <div class="bar" style="height:${h}px"><i style="height:${fill}%"></i></div><span>${'STQQSSD'[i]}</span></div>`;
   }).join('');
 
-  $('catList').innerHTML = Object.entries(CATS).map(([id,c]) => {
+  $('catList').innerHTML = [...Object.entries(CATS),...(tasks.some(t=>!CATS[t.cat])?[['',{label:'Sem categoria',color:'#888888'}]]:[])].map(([id,c]) => {
     const n = tasks.filter(t => t.cat === id && !t.done).length;
     return `<button class="cat-row ${state.cats.has(id)?'on':''}" data-cat="${id}" style="--c:${c.color}">
       <span class="dot"></span>${esc(c.label)}<span class="cnt">${n}</span></button>`;
@@ -1442,7 +1458,7 @@ for(const id of ['fDate','fRepeatUntil']){
 }
 function syncTaskColor(){
   const custom=$('fCustomColor').checked;
-  if(!custom)$('fColor').value=CATS[modalCat]?.color||'#2f5fb3';
+  if(!custom)$('fColor').value=CATS[modalCat]?.color||'#888888';
   $('fColor').disabled=!custom;
   $('fColorDescription').textContent=custom?'Cor usada somente nesta tarefa e nas novas ocorrências que você criar.':'Usando a cor padrão da categoria.';
 }
@@ -1555,7 +1571,7 @@ async function createRepeatedTasks(data){
 const backdrop = $('backdrop');
 function renderCategoryPicker(){
   $('fCats').innerHTML = Object.entries(CATS).map(([id,c]) =>
-    `<button type="button" class="cat-opt" data-cat="${id}" style="--c:${c.color}">${esc(c.label)}</button>`).join('');
+    `<button type="button" class="cat-opt" data-cat="${id}" style="--c:${c.color}">${esc(c.label)}</button>`).join('')+'<button type="button" class="cat-opt" data-cat="" style="--c:#888888">Sem categoria</button>';
 }
 renderCategoryPicker();
 
@@ -1578,13 +1594,13 @@ function openModal(task, dateKey){
   $('fDur').value = task ? (task.dur||'') : '';
   syncTaskTiming('duration');
   $('fNotes').value = task ? (task.notes||'') : '';
-  modalCat = task ? task.cat : state.lastCat;
+  modalCat = task ? (CATS[task.cat]?task.cat:'') : state.lastCat;
   modalPri = task ? task.pri : 'media';
   $('fDelete').hidden = !task;
   $('repeatSection').hidden=false;
   $('taskSaveMessage').textContent='';
   $('fCustomColor').checked=!!task&&/^#[0-9a-f]{6}$/i.test(task.color||'');
-  $('fColor').value=task?taskColor(task):(CATS[modalCat]?.color||'#2f5fb3');
+  $('fColor').value=task?taskColor(task):(CATS[modalCat]?.color||'#888888');
   document.querySelectorAll('input[name=repeatDay]').forEach(el=>el.checked=true);
   $('fRepeat').value='none';$('fRepeatEnd').value='count';$('fRepeatCount').value='10';
   setTaskDate('fRepeatUntil',keyOf(addDays(fromKey($('fDate').value),365)));syncRecurrence();
@@ -1681,7 +1697,7 @@ document.addEventListener('keydown', e => {
 
 /* ================= visão anual ================= */
 function yearTaskText(t){
-  return `${t.title}\n${t.date.split('-').reverse().join('/')} | ${t.time||'Dia inteiro / sem horário'}${t.dur?' | '+fmtDur(t.dur):''}\n${CATS[t.cat]?.label||''} | ${t.done?'Concluída':'Pendente'}${t.notes?'\n'+t.notes:''}`;
+  return `${t.title}\n${t.date.split('-').reverse().join('/')} | ${t.time||'Dia inteiro / sem horário'}${t.dur?' | '+fmtDur(t.dur):''}\n${CATS[t.cat]?.label||'Sem categoria'} | ${t.done?'Concluída':'Pendente'}${t.notes?'\n'+t.notes:''}`;
 }
 function renderYear(){
   const y=state.cursor.getFullYear(), tk=todayKey(), byDate=new Map();
@@ -1727,7 +1743,7 @@ function renderBulk(){
   const scope=$('bulkScope').value;
   $('bulkDayWrap').hidden=scope!=='day';$('bulkMonthWrap').hidden=scope!=='month';
   const list=bulkRows();bulkSelected=new Set([...bulkSelected].filter(id=>list.some(t=>t.id===id)));
-  $('bulkList').innerHTML=list.map(t=>`<label class="tools-item"><input type="checkbox" data-bulk-id="${esc(t.id)}" ${bulkSelected.has(t.id)?'checked':''}><span>${esc(t.title)}<small>${esc(t.date.split('-').reverse().join('/'))} | ${esc(t.time||'Sem horário')} | ${esc(CATS[t.cat]?.label||'')} | ${t.done?'Concluída':'Pendente'}</small></span></label>`).join('');
+  $('bulkList').innerHTML=list.map(t=>`<label class="tools-item"><input type="checkbox" data-bulk-id="${esc(t.id)}" ${bulkSelected.has(t.id)?'checked':''}><span>${esc(t.title)}<small>${esc(t.date.split('-').reverse().join('/'))} | ${esc(t.time||'Sem horário')} | ${esc(CATS[t.cat]?.label||'Sem categoria')} | ${t.done?'Concluída':'Pendente'}</small></span></label>`).join('');
   $('bulkMessage').textContent=list.length?`${list.length} tarefa(s) no período. A busca e os filtros do calendário não limitam esta lista.`:'Nenhuma tarefa neste período.';
   updateBulkCount();
 }
